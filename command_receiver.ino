@@ -1,18 +1,4 @@
 /*
-  DHCP-based IP printer
-
-  This sketch uses the DHCP extensions to the Ethernet library
-  to get an IP address via DHCP and print the address obtained.
-  using an Arduino Wiznet Ethernet shield.
-
-  Circuit:
-   Ethernet shield attached to pins 10, 11, 12, 13
-
-  created 12 April 2011
-  modified 9 Apr 2012
-  by Tom Igoe
-  modified 02 Sept 2015
-  by Arturo Guadalupi
 
  */
 
@@ -110,6 +96,8 @@ void loop() {
 
   //renew DHCP lease
   Ethernet.maintain();
+
+  Alarm.delay(50); // wait one second between clock display: low good for testing
 }
 
 void printCurrentTime() {
@@ -137,11 +125,11 @@ void executeCommand(String command) {
     
     alreadyConnected = false;
     client.stop();
-  } else if( command.indexOf( "set time" ) != -1 ) {
-    Serial.println(" (Set time)");
+  } else if( command.indexOf( "set alarm" ) != -1 ) {
+    Serial.println(" (Set alarm time)");
 
-    int hour = command.substring(9, 11).toInt(); //9 to skip trailing space as well
-    int minute = command.substring(12, 14).toInt();
+    int hour = command.substring(10, 12).toInt(); //10 to skip trailing space as well
+    int minute = command.substring(13, 15).toInt();
 
     Alarm.alarmRepeat(hour, minute, 0, wakeup);
   } else if( command.indexOf( "print time" ) != -1 ) {
