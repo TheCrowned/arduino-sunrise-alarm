@@ -16,6 +16,8 @@
 
  */
 
+#include <TimeLib.h>
+#include <TimeAlarms.h>
 #include <SPI.h>
 #include <Ethernet.h>
 
@@ -75,7 +77,7 @@ void setup() {
   Serial.print("Server address:");
   Serial.println(Ethernet.localIP());
 
-  setup_time();
+  setupTime();
 }
 
 void loop() {
@@ -99,9 +101,8 @@ void loop() {
       
       if( thisChar != '\n' ) {
         command_buffer += String(thisChar);
-        //Serial.println(command_buffer);
       } else {
-        execute_command(command_buffer);
+        executeCommand(command_buffer);
         command_buffer = String("");
       }
     }
@@ -111,7 +112,21 @@ void loop() {
   Ethernet.maintain();
 }
 
-void execute_command(String command) {
+void printCurrentTime() {
+  Serial.print(year(now()));
+  Serial.print("-");
+  Serial.print(month(now()));
+  Serial.print("-");
+  Serial.print(day(now()));
+  Serial.print(" ");
+  Serial.print(hour(now()));
+  Serial.print(":");
+  Serial.print(minute(now()));
+  Serial.print(":");
+  Serial.println(second(now()));
+}
+
+void executeCommand(String command) {
   command = command.substring(0, ( command.length() - 1 ) ); //there's a trailing BR (hex D)
   
   Serial.println("\n EXECUTING COMMAND: ");
@@ -119,21 +134,38 @@ void execute_command(String command) {
 
   if( command == String("exit") ) {
     Serial.println(" (Termino sessione)");
+    
     alreadyConnected = false;
     client.stop();
+  } else if( command.indexOf( "set time" ) != -1 ) {
+    Serial.println(" (Set time)");
+
+    int hour = command.substring(9, 11).toInt(); //9 to skip trailing space as well
+    int minute = command.substring(12, 14).toInt();
+
+    Alarm.alarmRepeat(hour, minute, 0, wakeup);
+  } else if( command.indexOf( "print time" ) != -1 ) {
+    Serial.println( " (Print current time)");
+     
+    printCurrentTime();
   }
+}
+
+void wakeup() {
+  Serial.println("wakeup!!!!");
 }
 
 /*
  * https://www.arduino.cc/en/Tutorial/UdpNtpClient
  */
-void setup_time() {
+void setupTime() {
   sendNTPpacket(timeServer); // send an NTP packet to a time server
   
   // wait to see if a reply is available
   delay(1000);
   if (Udp.parsePacket()) {
     // We've received a packet, read the data from it
+    Serial.println("NTP packet received...");
     Udp.read(NTPPacketBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
 
     // the timestamp starts at byte 40 of the received packet and is four bytes,
@@ -148,35 +180,34 @@ void setup_time() {
     Serial.println(secsSince1900);
 
     // now convert NTP time into everyday time:
-    Serial.print("Unix time = ");
+    Serial.print("Unix timestamp = ");
     // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
     const unsigned long seventyYears = 2208988800UL;
     // subtract seventy years:
-    unsigned long epoch = secsSince1900 - seventyYears;
+    time_t epoch = secsSince1900 - seventyYears;
     // print Unix time:
     Serial.println(epoch);
 
+    //Set current time
+    setTime(epoch);
+    
+    Serial.print("UNIX time is ");
+    printCurrentTime();
 
-    // print the hour, minute and second:
-    Serial.print("The UTC time is ");       // UTC is the time at Greenwich Meridian (GMT)
-    Serial.print((epoch  % 86400L) / 3600); // print the hour (86400 equals secs per day)
-    Serial.print(':');
-    if (((epoch % 3600) / 60) < 10) {
-      // In the first 10 minutes of each hour, we'll want a leading '0'
-      Serial.print('0');
-    }
-    Serial.print((epoch  % 3600) / 60); // print the minute (3600 equals secs per minute)
-    Serial.print(':');
-    if ((epoch % 60) < 10) {
-      // In the first 10 seconds of each minute, we'll want a leading '0'
-      Serial.print('0');
-    }
-    Serial.println(epoch % 60); // print the second
+    //Set local time
+    adjustTime(3600);
+
+    Serial.print("Local time is ");
+    printCurrentTime();
+  } else {
+    setupTime();
   }
 }
 
 // send an NTP request to the time server at the given address
 void sendNTPpacket(const char * address) {
+  Serial.println("Sending NTP packet...");
+  
   // set all bytes in the buffer to 0
   memset(NTPPacketBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
