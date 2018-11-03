@@ -54,13 +54,13 @@ void setup() {
   pinMode(13, OUTPUT);
 
   // start the Ethernet connection:
-  Serial.println("Initialize Ethernet with DHCP:");
+  Serial.println(F("Init Ethernet (DHCP):"));
   if (Ethernet.begin(mac) == 0) {
-    Serial.println("Failed to configure Ethernet using DHCP");
+    Serial.println(F("Failed to configure Ethernet"));
     if (Ethernet.hardwareStatus() == EthernetNoHardware) {
-      Serial.println("Ethernet shield not found.");
+      Serial.println(F("Ethernet shield not found"));
     } else if (Ethernet.linkStatus() == LinkOFF) {
-      Serial.println("Ethernet cable not connected.");
+      Serial.println(F("Ethernet not connected"));
     }
     // no point in carrying on, so do nothing forevermore:
     while (true) {
@@ -73,7 +73,7 @@ void setup() {
   // start listening for clients
   server.begin();
 
-  Serial.print("Server address:");
+  Serial.print(F("Server address:"));
   Serial.println(Ethernet.localIP());
 
   setupTime();
@@ -88,8 +88,9 @@ void loop() {
     if (!alreadyConnected) {
       // clear out the input buffer:
       client.flush();
-      Serial.println("We have a new client");
-      client.println("Hello, client!");
+      Serial.print(F("New client connected, IP: "));
+      Serial.println(client.remoteIP());
+      client.println(F("Hello client!"));
       alreadyConnected = true;
     }
 
@@ -130,16 +131,16 @@ void printCurrentTime() {
 void executeCommand(String command) {
   command = command.substring(0, ( command.length() - 1 ) ); //there's a trailing BR (hex D)
   
-  Serial.println("\n EXECUTING COMMAND: ");
+  Serial.println(F("\n> EXECUTING COMMAND: "));
   Serial.print(command);
 
   if( command == String("exit") ) {
-    Serial.println(" (Termino sessione)");
+    Serial.println(F(" (Termino sessione)"));
     
     alreadyConnected = false;
     client.stop();
   } else if( command.indexOf( "set alarm" ) != -1 ) {
-    Serial.println(" (Set alarm time)");
+    Serial.println(F(" (Set alarm time)"));
 
     int hour = command.substring(10, 12).toInt(); //10 to skip trailing space as well
     int minute = command.substring(13, 15).toInt();
@@ -148,24 +149,29 @@ void executeCommand(String command) {
     Alarm.alarmRepeat(hour, minute+sunriseDuration+5+5, 0, sing);
     Alarm.alarmRepeat(hour, minute+sunriseDuration+5+10, 0, alarmStop);
   } else if( command.indexOf( "print time" ) != -1 ) {
-    Serial.println( " (Print current time)");
+    Serial.println(F(" (Print current time)"));
      
     printCurrentTime();
+  } else if( command.indexOf( "clear alarms" ) ) {
+    Serial.println(F(" (Clear all alarms)"));
+
+    for(uint8_t id = 0; id < dtNBR_ALARMS; id++) {
+      free(id);   // ensure all Alarms are cleared and available for allocation
+    }
   }
 }
 
 void sunriseKickstart() {
-  Serial.println("\n~~ Starting sunrise ~~");
+  Serial.println(F("\n~~ Starting sunrise ~~"));
   
-  float currentSunriseVal = 0;
-  sunrise(currentSunriseVal);
+  sunrise(0);
 }
 
 /*
  * Otherwise Arduino is blocked
  */
 void alarmStop() {
-  Serial.println("~~ Stopping alarm ~~");
+  Serial.println(F("~~ Stopping alarm ~~"));
   analogWrite(LED, 0);
   alarmStopFlag = true;
 }
@@ -174,13 +180,13 @@ void sunrise(float sunriseVal) {
   sunriseVal += increment;
   
   if(sunriseVal < 255){
-    Serial.print("Current value for sunrise:");
+    Serial.print(F("Current value for sunrise:"));
     Serial.println(sunriseVal);
     analogWrite(LED, sunriseVal);
     delay(1000);
     sunrise(sunriseVal);
   } else {
-    Serial.println("~~ Keep lights on for a while... ~~");
+    Serial.println(F("~~ Keep lights on for a while... ~~"));
   }
 }
 
@@ -192,41 +198,41 @@ void setupTime() {
   
   // wait to see if a reply is available
   delay(1000);
+  
   if (Udp.parsePacket()) {
     // We've received a packet, read the data from it
-    Serial.println("NTP packet received...");
+    Serial.println(F("NTP packet received..."));
     Udp.read(NTPPacketBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
 
     // the timestamp starts at byte 40 of the received packet and is four bytes,
     // or two words, long. First, extract the two words:
-
     unsigned long highWord = word(NTPPacketBuffer[40], NTPPacketBuffer[41]);
     unsigned long lowWord = word(NTPPacketBuffer[42], NTPPacketBuffer[43]);
     // combine the four bytes (two words) into a long integer
     // this is NTP time (seconds since Jan 1 1900):
     unsigned long secsSince1900 = highWord << 16 | lowWord;
-    Serial.print("Seconds since Jan 1 1900 = ");
-    Serial.println(secsSince1900);
+    //Serial.print("Seconds since Jan 1 1900 = ");
+    //Serial.println(secsSince1900);
 
     // now convert NTP time into everyday time:
-    Serial.print("Unix timestamp = ");
+    //Serial.print("Unix timestamp = ");
     // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
     const unsigned long seventyYears = 2208988800UL;
     // subtract seventy years:
     time_t epoch = secsSince1900 - seventyYears;
     // print Unix time:
-    Serial.println(epoch);
+    //Serial.println(epoch);
 
     //Set current time
     setTime(epoch);
     
-    Serial.print("UNIX time is ");
-    printCurrentTime();
+    //Serial.print("UNIX time is ");
+    //printCurrentTime();
 
     //Set local time
     adjustTime(3600);
 
-    Serial.print("Local time is ");
+    Serial.print(F("Local time is "));
     printCurrentTime();
   } else {
     setupTime();
@@ -235,7 +241,7 @@ void setupTime() {
 
 // send an NTP request to the time server at the given address
 void sendNTPpacket(const char * address) {
-  Serial.println("Sending NTP packet...");
+  Serial.println(F("Sending NTP packet..."));
   
   // set all bytes in the buffer to 0
   memset(NTPPacketBuffer, 0, NTP_PACKET_SIZE);
@@ -258,6 +264,9 @@ void sendNTPpacket(const char * address) {
   Udp.endPacket();
 }
 
+/*
+ * https://www.princetronics.com/supermariothemesong/
+ */
 #define NOTE_B0  31
 #define NOTE_C1  33
 #define NOTE_CS1 35
@@ -371,7 +380,7 @@ int underworld_melody[] = {
   0, 0, 0
 };
 
-//Underwolrd tempo
+//Underworld tempo
 int underworld_tempo[] = {
   12, 12, 12, 12,
   12, 12, 6,
@@ -395,7 +404,8 @@ int underworld_tempo[] = {
 };
 
 void sing() {
-  delay(2000);
+  delay(2000); //pause between one alarm and the other
+  
   // iterate over the notes of the melody:
   int size = sizeof(underworld_melody) / sizeof(int);
   for (int thisNote = 0; thisNote < size; thisNote++) {
@@ -405,8 +415,7 @@ void sing() {
     buzz(BUZZER, underworld_melody[thisNote], noteDuration);
 
     // to distinguish the notes, set a minimum time between them. The note's duration + 30% seems to work well:
-    int pauseBetweenNotes = noteDuration * 1.30;
-    delay(pauseBetweenNotes);
+    delay(noteDuration * 1.30);
 
     // stop the tone playing:
     buzz(BUZZER, 0, noteDuration);
