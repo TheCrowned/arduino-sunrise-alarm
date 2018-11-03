@@ -13,24 +13,24 @@
 
 // Enter a MAC address for your controller below.
 // Newer Ethernet shields have a MAC address printed on a sticker on the shield
-byte mac[] = {
+const PROGMEM byte mac[] = {
   0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02
 };
 
 EthernetServer server(23);
 EthernetClient client;
 
-const char timeServer[] = "time.nist.gov";
-const int NTP_PACKET_SIZE = 48;
+const PROGMEM char timeServer[] = "time.nist.gov";
+const PROGMEM int NTP_PACKET_SIZE = 48;
 byte NTPPacketBuffer[NTP_PACKET_SIZE];
 EthernetUDP Udp;
-const int UDPLocalPort = 8888;
+const PROGMEM int UDPLocalPort = 8888;
 
 boolean alreadyConnected = false; // whether or not the client was connected previously
 String commandBuffer = "";
 
-float sunriseDuration = 0.5; //minutes
-float increment = (float) 255/(sunriseDuration*60); //each second during the value by
+const float PROGMEM sunriseDuration = 0.5; //minutes
+const PROGMEM float increment = (float) 255/(sunriseDuration*60); //each second during the value by
 bool alarmStopFlag = false;
 
 void setup() {
@@ -116,15 +116,15 @@ void loop() {
 
 void printCurrentTime() {
   Serial.print(year(now()));
-  Serial.print("-");
+  Serial.print(F("-"));
   Serial.print(month(now()));
-  Serial.print("-");
+  Serial.print(F("-"));
   Serial.print(day(now()));
-  Serial.print(" ");
+  Serial.print(F(" "));
   Serial.print(hour(now()));
-  Serial.print(":");
+  Serial.print(F(":"));
   Serial.print(minute(now()));
-  Serial.print(":");
+  Serial.print(F(":"));
   Serial.println(second(now()));
 }
 
@@ -358,7 +358,7 @@ void sendNTPpacket(const char * address) {
 #define NOTE_DS8 4978
 
 //Underworld melody
-int underworld_melody[] = {
+const PROGMEM int underworld_melody[] = {
   NOTE_C4, NOTE_C5, NOTE_A3, NOTE_A4,
   NOTE_AS3, NOTE_AS4, 0,
   0,
@@ -381,7 +381,7 @@ int underworld_melody[] = {
 };
 
 //Underworld tempo
-int underworld_tempo[] = {
+const PROGMEM int underworld_tempo[] = {
   12, 12, 12, 12,
   12, 12, 6,
   3,
@@ -412,17 +412,17 @@ void sing() {
     // to calculate the note duration, take one second divided by the note type.
     int noteDuration = 1000 / underworld_tempo[thisNote];
 
-    buzz(BUZZER, underworld_melody[thisNote], noteDuration);
+    buzz(underworld_melody[thisNote], noteDuration);
 
     // to distinguish the notes, set a minimum time between them. The note's duration + 30% seems to work well:
     delay(noteDuration * 1.30);
 
     // stop the tone playing:
-    buzz(BUZZER, 0, noteDuration);
+    buzz(0, noteDuration);
   }
 }
 
-void buzz(int targetPin, long frequency, long length) {
+void buzz(long frequency, long length) {
   digitalWrite(13, HIGH);
   long delayValue = 1000000 / frequency / 2; // calculate the delay value between transitions
   // 1 second's worth of microseconds, divided by the frequency, then split in half since
@@ -431,9 +431,9 @@ void buzz(int targetPin, long frequency, long length) {
   // multiply frequency, which is really cycles per second, by the number of seconds to
   // get the total number of cycles to produce
   for (long i = 0; i < numCycles; i++) { // for the calculated length of time...
-    digitalWrite(targetPin, HIGH); // write the buzzer pin high to push out the diaphram
+    digitalWrite(BUZZER, HIGH); // write the buzzer pin high to push out the diaphram
     delayMicroseconds(delayValue); // wait for the calculated delay value
-    digitalWrite(targetPin, LOW); // write the buzzer pin low to pull back the diaphram
+    digitalWrite(BUZZER, LOW); // write the buzzer pin low to pull back the diaphram
     delayMicroseconds(delayValue); // wait again or the calculated delay value
   }
   digitalWrite(13, LOW);
