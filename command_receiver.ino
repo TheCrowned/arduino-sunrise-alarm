@@ -1,47 +1,48 @@
 /*
+Arduino sunrise alarm
 
- */
+@author Stefano Ottolenghi
+@website www.thecrowned.org
+*/
 
 #include <TimeLib.h>
 #include <TimeAlarms.h>
 #include <SPI.h>
 #include <Ethernet.h>
 
-#define LED 11
+#define LED 9
 #define BUTTON 2
 #define BUZZER 3
 
+//For LED circuitry help, see https://www.makeuseof.com/tag/connect-led-light-strips-arduino/
+
+//For F() and PROGMEM, see http://playground.arduino.cc/Learning/Memory
+//PROGMEM cannot properly store arrays (or you'd need be cautious when accessing them, see
+//https://arduino.stackexchange.com/questions/36120/problem-when-using-progmem-on-array-holding-notes-for-speaker-on-arduino
+
 // Enter a MAC address for your controller below.
-// Newer Ethernet shields have a MAC address printed on a sticker on the shield
-const PROGMEM byte mac[] = {
-  0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02
-};
+const byte mac[] = { 0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02 };
+//IPAddress ip(192,168,1,110);
+//const PROGMEM IPAddress ip(10, 42, 0, 174);
 
 EthernetServer server(23);
 EthernetClient client;
 
-const PROGMEM char timeServer[] = "time.nist.gov";
-const PROGMEM int NTP_PACKET_SIZE = 48;
+const char timeServer[] = "time.nist.gov"; //Using PROGMEM here breaks the NTP packet routines
+const int NTP_PACKET_SIZE = 48;
 byte NTPPacketBuffer[NTP_PACKET_SIZE];
 EthernetUDP Udp;
-const PROGMEM int UDPLocalPort = 8888;
+const int UDPLocalPort = 8888;
+bool ethStatus;
 
 boolean alreadyConnected = false; // whether or not the client was connected previously
 String commandBuffer = "";
 
-const float PROGMEM sunriseDuration = 0.5; //minutes
-const PROGMEM float increment = (float) 255/(sunriseDuration*60); //each second during the value by
-bool alarmStopFlag = false;
+const float sunriseDuration = 0.5; //minutes
+const float increment = (float) 255/(sunriseDuration*60); //each second increase the LED value by
+bool alarmStopFlag = false; //if true, alarm will stop singing
 
 void setup() {
-  // You can use Ethernet.init(pin) to configure the CS pin
-  //Ethernet.init(10);  // Most Arduino shields
-  //Ethernet.init(5);   // MKR ETH shield
-  //Ethernet.init(0);   // Teensy 2.0
-  //Ethernet.init(20);  // Teensy++ 2.0
-  //Ethernet.init(15);  // ESP8266 with Adafruit Featherwing Ethernet
-  //Ethernet.init(33);  // ESP32 with Adafruit Featherwing Ethernet
-
   // Open serial communications and wait for port to open:
   Serial.begin(9600);
   while (!Serial) {
@@ -52,19 +53,21 @@ void setup() {
   pinMode(BUTTON, INPUT);
   pinMode(BUZZER, OUTPUT);
   pinMode(13, OUTPUT);
-
+  
   // start the Ethernet connection:
   Serial.println(F("Init Ethernet (DHCP):"));
-  if (Ethernet.begin(mac) == 0) {
+  if(! (ethStatus = Ethernet.begin(mac))) {
     Serial.println(F("Failed to configure Ethernet"));
     if (Ethernet.hardwareStatus() == EthernetNoHardware) {
       Serial.println(F("Ethernet shield not found"));
     } else if (Ethernet.linkStatus() == LinkOFF) {
       Serial.println(F("Ethernet not connected"));
     }
-    // no point in carrying on, so do nothing forevermore:
-    while (true) {
-      delay(1);
+
+    //If no network, rerun setup. We can do without it after setup, but not before
+    if(! ethStatus) { 
+      delay(5000);
+      setup();
     }
   }
 
@@ -73,7 +76,7 @@ void setup() {
   // start listening for clients
   server.begin();
 
-  Serial.print(F("Server address:"));
+  Serial.print(F("Server is at:"));
   Serial.println(Ethernet.localIP());
 
   setupTime();
@@ -83,20 +86,18 @@ void loop() {
   // wait for a new client:
   client = server.available();
 
-  // when the client sends the first byte, say hello:
+  // when the client sends the first byte, greet them:
   if (client) {
     if (!alreadyConnected) {
       // clear out the input buffer:
-      client.flush();
       Serial.print(F("New client connected, IP: "));
       Serial.println(client.remoteIP());
       client.println(F("Hello client!"));
+      client.flush();
       alreadyConnected = true;
     }
 
     if (client.available() > 0) {
-      
-      // read the bytes incoming from the client:
       char thisChar = client.read();
       
       if( thisChar != '\n' ) {
@@ -115,17 +116,17 @@ void loop() {
 }
 
 void printCurrentTime() {
-  Serial.print(year(now()));
-  Serial.print(F("-"));
-  Serial.print(month(now()));
-  Serial.print(F("-"));
-  Serial.print(day(now()));
-  Serial.print(F(" "));
-  Serial.print(hour(now()));
-  Serial.print(F(":"));
-  Serial.print(minute(now()));
-  Serial.print(F(":"));
-  Serial.println(second(now()));
+  client.print(year(now()));
+  client.print(F("-"));
+  client.print(month(now()));
+  client.print(F("-"));
+  client.print(day(now()));
+  client.print(F(" "));
+  client.print(hour(now()));
+  client.print(F(":"));
+  client.print(minute(now()));
+  client.print(F(":"));
+  client.println(second(now()));
 }
 
 void executeCommand(String command) {
@@ -146,18 +147,38 @@ void executeCommand(String command) {
     int minute = command.substring(13, 15).toInt();
 
     Alarm.alarmRepeat(hour, minute, 0, sunriseKickstart);
-    Alarm.alarmRepeat(hour, minute+sunriseDuration+5+5, 0, sing);
-    Alarm.alarmRepeat(hour, minute+sunriseDuration+5+10, 0, alarmStop);
+    Alarm.alarmRepeat(hour, minute+sunriseDuration+5, 0, sing);
+    Alarm.alarmRepeat(hour, minute+sunriseDuration+5+2, 0, alarmStop);
   } else if( command.indexOf( "print time" ) != -1 ) {
     Serial.println(F(" (Print current time)"));
      
     printCurrentTime();
-  } else if( command.indexOf( "clear alarms" ) ) {
+  } else if( command.indexOf( "clear alarms" ) != -1 ) {
     Serial.println(F(" (Clear all alarms)"));
 
     for(uint8_t id = 0; id < dtNBR_ALARMS; id++) {
       free(id);   // ensure all Alarms are cleared and available for allocation
     }
+  } else if (command.indexOf("lights on") != -1) {
+    Serial.println(F(" (Lights on)"));
+    int brightness = 255;
+    if(command.length() > 10) {
+      brightness = command.substring(10, command.length()).toInt();
+    }
+    analogWrite(LED, brightness);
+  } else if (command.indexOf("lights off") != -1) {
+    Serial.println(F(" (Lights off)"));
+    analogWrite(LED, 0);
+  } else if (command.indexOf("lights rainbow") != -1) {
+    Serial.println(F(" (Lights rianbow)"));
+    for(int i = 0; i < 255; i++) {
+      analogWrite(LED, random(0, 255));
+      delay(333);
+    }
+    analogWrite(LED, 0);
+  } else if (command.indexOf("sing") != -1) {
+    Serial.println(F(" (Sing tune)"));
+    sing();
   }
 }
 
@@ -197,7 +218,7 @@ void setupTime() {
   sendNTPpacket(timeServer); // send an NTP packet to a time server
   
   // wait to see if a reply is available
-  delay(1000);
+  delay(2000);
   
   if (Udp.parsePacket()) {
     // We've received a packet, read the data from it
@@ -211,29 +232,21 @@ void setupTime() {
     // combine the four bytes (two words) into a long integer
     // this is NTP time (seconds since Jan 1 1900):
     unsigned long secsSince1900 = highWord << 16 | lowWord;
-    //Serial.print("Seconds since Jan 1 1900 = ");
-    //Serial.println(secsSince1900);
 
-    // now convert NTP time into everyday time:
-    //Serial.print("Unix timestamp = ");
+    // now convert NTP time into everyday time (UNIX timestamp):
     // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
     const unsigned long seventyYears = 2208988800UL;
     // subtract seventy years:
     time_t epoch = secsSince1900 - seventyYears;
-    // print Unix time:
-    //Serial.println(epoch);
 
     //Set current time
     setTime(epoch);
-    
-    //Serial.print("UNIX time is ");
-    //printCurrentTime();
 
     //Set local time
     adjustTime(3600);
 
     Serial.print(F("Local time is "));
-    printCurrentTime();
+    Serial.println(now());
   } else {
     setupTime();
   }
@@ -358,7 +371,7 @@ void sendNTPpacket(const char * address) {
 #define NOTE_DS8 4978
 
 //Underworld melody
-const PROGMEM int underworld_melody[] = {
+const int underworld_melody[] = {
   NOTE_C4, NOTE_C5, NOTE_A3, NOTE_A4,
   NOTE_AS3, NOTE_AS4, 0,
   0,
@@ -381,7 +394,7 @@ const PROGMEM int underworld_melody[] = {
 };
 
 //Underworld tempo
-const PROGMEM int underworld_tempo[] = {
+const int underworld_tempo[] = {
   12, 12, 12, 12,
   12, 12, 6,
   3,
@@ -404,11 +417,26 @@ const PROGMEM int underworld_tempo[] = {
 };
 
 void sing() {
+  //don't sing if button has been pushed, and reset status
+  /*if(alarmStopFlag) { 
+    alarmStopFlag = false; 
+    return; 
+  }*/
+  
+  Serial.println(F("Singing a tune..."));
   delay(2000); //pause between one alarm and the other
   
   // iterate over the notes of the melody:
   int size = sizeof(underworld_melody) / sizeof(int);
   for (int thisNote = 0; thisNote < size; thisNote++) {
+    //Look for stop trigger
+    if(digitalRead(BUTTON) == HIGH) {
+      Serial.println(F("Stop singing!"));
+      //alarmStopFlag = false;
+      alarmStop();
+      return;
+    }
+    
     // to calculate the note duration, take one second divided by the note type.
     int noteDuration = 1000 / underworld_tempo[thisNote];
 
@@ -420,6 +448,8 @@ void sing() {
     // stop the tone playing:
     buzz(0, noteDuration);
   }
+  
+  sing(); //keep singing until turned off with button
 }
 
 void buzz(long frequency, long length) {
@@ -437,9 +467,4 @@ void buzz(long frequency, long length) {
     delayMicroseconds(delayValue); // wait again or the calculated delay value
   }
   digitalWrite(13, LOW);
-
-  //Look for stop trigger
-  if(digitalRead(BUTTON) == HIGH) {
-    alarmStop();
-  }
 }
