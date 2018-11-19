@@ -13,6 +13,7 @@ Arduino sunrise alarm
 #define LED 9
 #define BUTTON 2
 #define BUZZER 3
+#define NIGHT 5
 
 //For LED circuitry help, see https://www.makeuseof.com/tag/connect-led-light-strips-arduino/
 
@@ -41,6 +42,7 @@ String commandBuffer = "";
 const float sunriseDuration = 0.5; //minutes
 const float increment = (float) 255/(sunriseDuration*60); //each second increase the LED value by
 bool alarmStopFlag = false; //if true, alarm will stop singing
+bool lightsOnManual = false;
 
 void setup() {
   // Open serial communications and wait for port to open:
@@ -52,6 +54,7 @@ void setup() {
   pinMode(LED, OUTPUT);
   pinMode(BUTTON, INPUT);
   pinMode(BUZZER, OUTPUT);
+  pinMode(NIGHT, INPUT);
   pinMode(13, OUTPUT);
   
   // start the Ethernet connection:
@@ -113,6 +116,20 @@ void loop() {
   Ethernet.maintain();
 
   Alarm.delay(50); // wait one second between clock display: low good for testing
+
+  maybeNightLight();
+}
+
+void maybeNightLight() {
+  if(digitalRead(NIGHT) == LOW and lightsOnManual == false) {
+    Serial.println(F("~~ Activating night light ~~"));
+    lightsOnManual = true;
+    analogWrite(LED, 20);
+  } else if(digitalRead(NIGHT) == HIGH and lightsOnManual == true) {
+    Serial.println(F("~~ De-activating night light ~~"));
+    analogWrite(LED, 0);
+    lightsOnManual = false;
+  }
 }
 
 void printCurrentTime() {
