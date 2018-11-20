@@ -13,7 +13,9 @@ Arduino sunrise alarm
 #define LED 9
 #define BUTTON 2
 #define BUZZER 3
-#define NIGHT 5
+#define NIGHT 5 //sensor for night light 
+
+#define DEBUG 1
 
 //For LED circuitry help, see https://www.makeuseof.com/tag/connect-led-light-strips-arduino/
 
@@ -23,20 +25,20 @@ Arduino sunrise alarm
 
 // Enter a MAC address for your controller below.
 const byte mac[] = { 0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02 };
-//IPAddress ip(192,168,1,110);
-//const PROGMEM IPAddress ip(10, 42, 0, 174);
+//const IPAddress ip(10, 42, 0, 174);
 
 EthernetServer server(23);
 EthernetClient client;
 
-const char timeServer[] = "time.nist.gov"; //Using PROGMEM here breaks the NTP packet routines
+const char timeServer[] = "time.nist.gov";
 const int NTP_PACKET_SIZE = 48;
 byte NTPPacketBuffer[NTP_PACKET_SIZE];
 EthernetUDP Udp;
 const int UDPLocalPort = 8888;
 bool ethStatus;
 
-boolean alreadyConnected = false; // whether or not the client was connected previously
+bool alreadyConnected = false; // whether or not the client was connected previously
+bool password = false; //whether user has entered secret keyword
 String commandBuffer = "";
 
 const float sunriseDuration = 0.5; //minutes
@@ -44,11 +46,25 @@ const float increment = (float) 255/(sunriseDuration*60); //each second increase
 bool alarmStopFlag = false; //if true, alarm will stop singing
 bool lightsOnManual = false;
 
+/*
+ * Logs messages to Serial output if output enabled.
+ * Some manual calls to Serial still present in the code due to non-string messages.
+ */
+void debug(const __FlashStringHelper* msg) {
+  if(DEBUG)
+    Serial.println(msg);
+}
+
+/*
+ * Standard Arduino setup function, run once when program starts and never again.
+ */
 void setup() {
   // Open serial communications and wait for port to open:
-  Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
+  if(DEBUG) {
+    Serial.begin(9600);
+    while (!Serial) {
+      ; // wait for serial port to connect. Needed for native USB port only
+    }
   }
 
   pinMode(LED, OUTPUT);
@@ -57,14 +73,14 @@ void setup() {
   pinMode(NIGHT, INPUT);
   pinMode(13, OUTPUT);
   
-  // start the Ethernet connection:
-  Serial.println(F("Init Ethernet (DHCP):"));
+  //Start the Ethernet connection
+  debug(F("Init Ethernet (DHCP):"));
   if(! (ethStatus = Ethernet.begin(mac))) {
-    Serial.println(F("Failed to configure Ethernet"));
+    debug(F("Failed to configure Ethernet"));
     if (Ethernet.hardwareStatus() == EthernetNoHardware) {
-      Serial.println(F("Ethernet shield not found"));
+      debug(F("Ethernet shield not found"));
     } else if (Ethernet.linkStatus() == LinkOFF) {
-      Serial.println(F("Ethernet not connected"));
+      debug(F("Ethernet not connected"));
     }
 
     //If no network, rerun setup. We can do without it after setup, but not before
@@ -79,12 +95,17 @@ void setup() {
   // start listening for clients
   server.begin();
 
-  Serial.print(F("Server is at:"));
-  Serial.println(Ethernet.localIP());
+  if(DEBUG) {
+    Serial.print(F("Server is at:"));
+    Serial.println(Ethernet.localIP());
+  }
 
   setupTime();
 }
 
+/*
+ * Standard Arduino loop function. Executed constantly by microprocessor.
+ */
 void loop() {
   // wait for a new client:
   client = server.available();
@@ -92,11 +113,14 @@ void loop() {
   // when the client sends the first byte, greet them:
   if (client) {
     if (!alreadyConnected) {
-      // clear out the input buffer:
-      Serial.print(F("New client connected, IP: "));
-      Serial.println(client.remoteIP());
+      
+      if(DEBUG) {
+        Serial.print(F("New client connected, IP: "));
+        Serial.println(client.remoteIP());
+      }
+      
       client.println(F("Hello client!"));
-      client.flush();
+      client.flush(); // clear out the input buffer
       alreadyConnected = true;
     }
 
@@ -120,45 +144,66 @@ void loop() {
   maybeNightLight();
 }
 
+/*
+ * Enabled night light if sensor is triggered.
+ */
 void maybeNightLight() {
   if(digitalRead(NIGHT) == LOW and lightsOnManual == false) {
-    Serial.println(F("~~ Activating night light ~~"));
+    debug(F("~~ Activating night light ~~"));
     lightsOnManual = true;
     analogWrite(LED, 20);
   } else if(digitalRead(NIGHT) == HIGH and lightsOnManual == true) {
-    Serial.println(F("~~ De-activating night light ~~"));
+    debug(F("~~ De-activating night light ~~"));
     analogWrite(LED, 0);
     lightsOnManual = false;
   }
 }
 
-void printCurrentTime() {
-  client.print(year(now()));
+/*
+ * Prints current time to telnet client.
+ */
+void printTime(int timestamp) {
+  client.print(year(timestamp));
   client.print(F("-"));
-  client.print(month(now()));
+  client.print(month(timestamp));
   client.print(F("-"));
-  client.print(day(now()));
+  client.print(day(timestamp));
   client.print(F(" "));
-  client.print(hour(now()));
+  client.print(hour(timestamp));
   client.print(F(":"));
-  client.print(minute(now()));
+  client.print(minute(timestamp));
   client.print(F(":"));
-  client.println(second(now()));
+  client.println(second(timestamp));
 }
 
+/*
+ * Executes a command arrived through telnet.
+ */
 void executeCommand(String command) {
   command = command.substring(0, ( command.length() - 1 ) ); //there's a trailing BR (hex D)
-  
-  Serial.println(F("\n> EXECUTING COMMAND: "));
-  Serial.print(command);
+
+  if(command == String("feynman")) {
+    password = true;
+    client.println(F("Access granted"));
+    return;
+  }
+
+  if(password == false) return;
+
+  if(DEBUG) {
+    Serial.println(F("\n> EXECUTING COMMAND: "));
+    Serial.print(command);
+  }
 
   if( command == String("exit") ) {
-    Serial.println(F(" (Termino sessione)"));
+    debug(F(" (Termino sessione)"));
     
     alreadyConnected = false;
+    password = false;
+    
     client.stop();
   } else if( command.indexOf( "set alarm" ) != -1 ) {
-    Serial.println(F(" (Set alarm time)"));
+    debug(F(" (Set alarm time)"));
 
     int hour = command.substring(10, 12).toInt(); //10 to skip trailing space as well
     int minute = command.substring(13, 15).toInt();
@@ -167,68 +212,89 @@ void executeCommand(String command) {
     Alarm.alarmRepeat(hour, minute+sunriseDuration+5, 0, sing);
     Alarm.alarmRepeat(hour, minute+sunriseDuration+5+2, 0, alarmStop);
   } else if( command.indexOf( "print time" ) != -1 ) {
-    Serial.println(F(" (Print current time)"));
+    debug(F(" (Print current time)"));
      
-    printCurrentTime();
+    printTime(now());
   } else if( command.indexOf( "clear alarms" ) != -1 ) {
-    Serial.println(F(" (Clear all alarms)"));
+    debug(F(" (Clear all alarms)"));
 
     for(uint8_t id = 0; id < dtNBR_ALARMS; id++) {
       free(id);   // ensure all Alarms are cleared and available for allocation
     }
+  } else if( command.indexOf( "show alarms" ) != -1 ) {
+    for (uint8_t id = 0; id < dtNBR_ALARMS; id++) {
+      debug(F(" (Show alarms)"));
+      if(Alarm.isAllocated(id)) {
+        client.println(Alarm.getNextTrigger(id));
+      }
+    }
   } else if (command.indexOf("lights on") != -1) {
-    Serial.println(F(" (Lights on)"));
+    debug(F(" (Lights on)"));
     int brightness = 255;
     if(command.length() > 10) {
       brightness = command.substring(10, command.length()).toInt();
     }
     analogWrite(LED, brightness);
   } else if (command.indexOf("lights off") != -1) {
-    Serial.println(F(" (Lights off)"));
+    debug(F(" (Lights off)"));
     analogWrite(LED, 0);
   } else if (command.indexOf("lights rainbow") != -1) {
-    Serial.println(F(" (Lights rianbow)"));
+    debug(F(" (Lights rianbow)"));
     for(int i = 0; i < 255; i++) {
       analogWrite(LED, random(0, 255));
       delay(333);
     }
     analogWrite(LED, 0);
   } else if (command.indexOf("sing") != -1) {
-    Serial.println(F(" (Sing tune)"));
+    debug(F(" (Sing tune)"));
     sing();
   }
 }
 
+/*
+ * Starts sunrise when alarm is triggered.
+ */
 void sunriseKickstart() {
-  Serial.println(F("\n~~ Starting sunrise ~~"));
+  debug(F("\n~~ Starting sunrise ~~"));
   
   sunrise(0);
 }
 
 /*
- * Otherwise Arduino is blocked
+ * Stops alarm.
+ * Needs to be another function triggered by another alarm, 
+ * otherwise Arduino would be blocked in all the time in which the alarm is firing.
  */
 void alarmStop() {
-  Serial.println(F("~~ Stopping alarm ~~"));
+  debug(F("~~ Stopping alarm ~~"));
   analogWrite(LED, 0);
   alarmStopFlag = true;
 }
 
+/*
+ * Makes the sunrise happen.
+ */
 void sunrise(float sunriseVal) {
   sunriseVal += increment;
   
   if(sunriseVal < 255){
-    Serial.print(F("Current value for sunrise:"));
-    Serial.println(sunriseVal);
+    if(DEBUG) {
+      Serial.print(F("Current value for sunrise:"));
+      Serial.println(sunriseVal);
+    }
+    
     analogWrite(LED, sunriseVal);
     delay(1000);
     sunrise(sunriseVal);
   } else {
-    Serial.println(F("~~ Keep lights on for a while... ~~"));
+    debug(F("~~ Keep lights on for a while... ~~"));
   }
 }
 
 /*
+ * Arduino does not have any internal clock, so we must care for the time.
+ * We retrieve it through a NTP server and then keep track of it.
+ * 
  * https://www.arduino.cc/en/Tutorial/UdpNtpClient
  */
 void setupTime() {
@@ -239,7 +305,7 @@ void setupTime() {
   
   if (Udp.parsePacket()) {
     // We've received a packet, read the data from it
-    Serial.println(F("NTP packet received..."));
+    debug(F("NTP packet received..."));
     Udp.read(NTPPacketBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
 
     // the timestamp starts at byte 40 of the received packet and is four bytes,
@@ -262,16 +328,20 @@ void setupTime() {
     //Set local time
     adjustTime(3600);
 
-    Serial.print(F("Local time is "));
-    Serial.println(now());
+    if(DEBUG) {
+      Serial.print(F("Local time is "));
+      Serial.println(now());
+    }
   } else {
     setupTime();
   }
 }
 
-// send an NTP request to the time server at the given address
+/* 
+ * Send an NTP request to the time server at the given address.
+ */
 void sendNTPpacket(const char * address) {
-  Serial.println(F("Sending NTP packet..."));
+  debug(F("Sending NTP packet..."));
   
   // set all bytes in the buffer to 0
   memset(NTPPacketBuffer, 0, NTP_PACKET_SIZE);
@@ -433,23 +503,20 @@ const int underworld_tempo[] = {
   3, 3, 3
 };
 
+/*
+ * Sings the super mario tune until the stop button is pushed.
+ */
 void sing() {
-  //don't sing if button has been pushed, and reset status
-  /*if(alarmStopFlag) { 
-    alarmStopFlag = false; 
-    return; 
-  }*/
-  
-  Serial.println(F("Singing a tune..."));
+  debug(F("Singing a tune..."));
   delay(2000); //pause between one alarm and the other
   
   // iterate over the notes of the melody:
   int size = sizeof(underworld_melody) / sizeof(int);
   for (int thisNote = 0; thisNote < size; thisNote++) {
+    
     //Look for stop trigger
     if(digitalRead(BUTTON) == HIGH) {
-      Serial.println(F("Stop singing!"));
-      //alarmStopFlag = false;
+      debug(F("Stop singing!"));
       alarmStop();
       return;
     }
@@ -469,6 +536,9 @@ void sing() {
   sing(); //keep singing until turned off with button
 }
 
+/*
+ * Plays a single note through the buzzer.
+ */
 void buzz(long frequency, long length) {
   digitalWrite(13, HIGH);
   long delayValue = 1000000 / frequency / 2; // calculate the delay value between transitions
