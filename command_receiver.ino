@@ -43,6 +43,8 @@ String commandBuffer = "";
 
 const float sunriseDuration = 0.5; //minutes
 const float increment = (float) 255 / (sunriseDuration * 60); //each second increase the LED value by
+const float buzzerDelay = 1;
+float sunriseVal = 0;
 bool alarmStopFlag = false; //if true, alarm will stop singing
 bool lightsOnManual = false;
 
@@ -199,6 +201,7 @@ void executeCommand(String command) {
   if ( command == String("help") ) {
     debug(F(" (Help)"));
     client.println(F("print time"));
+    client.println(F("show alarms"));
     client.println(F("set alarm"));
     client.println(F("clear alarms"));
     client.println(F("lights on [n]"));
@@ -207,6 +210,7 @@ void executeCommand(String command) {
     client.println(F("sing"));
     client.println(F("update time"));
     client.println(F("exit"));
+    
   } else if ( command == String("exit") ) {
     debug(F(" (Termino sessione)"));
 
@@ -214,24 +218,34 @@ void executeCommand(String command) {
     password = false;
 
     client.stop();
+    
   } else if ( command.indexOf( "set alarm" ) != -1 ) {
     debug(F(" (Set alarm time)"));
 
-    int hour = command.substring(10, 12).toInt(); //10 to skip trailing space as well
-    int minute = command.substring(13, 15).toInt();
+    time_t sunriseAlarmTime = AlarmHMS(command.substring(10, 12).toInt(), //10 to skip trailing space as well
+                                command.substring(13, 15).toInt(),
+                                0);
+    time_t buzzerAlarmTime = sunriseAlarmTime + (sunriseDuration + buzzerDelay)*60;
+    time_t stopAlarmTime = sunriseAlarmTime + (sunriseDuration + buzzerDelay + 2)*60;
 
-    Alarm.alarmRepeat(hour, minute, 0, sunriseKickstart);
-    Alarm.alarmRepeat(hour, minute + sunriseDuration + 5, 0, sing);
-    Alarm.alarmRepeat(hour, minute + sunriseDuration + 5 + 2, 0, alarmStop);
+    Alarm.alarmRepeat(hour(sunriseAlarmTime), minute(sunriseAlarmTime), second(sunriseAlarmTime), sunriseKickstart);
+    Alarm.alarmRepeat(hour(buzzerAlarmTime), minute(buzzerAlarmTime), second(buzzerAlarmTime), sing);
+    Alarm.alarmRepeat(hour(stopAlarmTime), minute(stopAlarmTime), second(stopAlarmTime), alarmStop);
+    
   } else if ( command.indexOf( "print time" ) != -1 ) {
     debug(F(" (Print current time)"));
     printTime(now());
+    
   } else if ( command.indexOf( "clear alarms" ) != -1 ) {
     debug(F(" (Clear all alarms)"));
 
     for (uint8_t id = 0; id < dtNBR_ALARMS; id++) {
-      free(id);   // ensure all Alarms are cleared and available for allocation
+      if (Alarm.isAllocated(id)) {
+        Alarm.free(id);   // ensure all Alarms are cleared and available for allocation
+        Serial.println(id);
+      }
     }
+    
   } else if ( command.indexOf( "show alarms" ) != -1 ) {
     debug(F(" (Show alarms)"));
     for (uint8_t id = 0; id < dtNBR_ALARMS; id++) {
@@ -239,6 +253,7 @@ void executeCommand(String command) {
         printTime(Alarm.getNextTrigger(id));
       }
     }
+    
   } else if (command.indexOf("lights on") != -1) {
     debug(F(" (Lights on)"));
     int brightness = 255;
@@ -246,19 +261,23 @@ void executeCommand(String command) {
       brightness = command.substring(10, command.length()).toInt();
     }
     analogWrite(LED, brightness);
+    
   } else if (command.indexOf("lights off") != -1) {
     debug(F(" (Lights off)"));
     analogWrite(LED, 0);
+    
   } else if (command.indexOf("lights rainbow") != -1) {
-    debug(F(" (Lights rianbow)"));
+    debug(F(" (Lights rainbow)"));
     for (int i = 0; i < 255; i++) {
       analogWrite(LED, random(0, 255));
       delay(200);
     }
     analogWrite(LED, 0);
+    
   } else if (command.indexOf("sing") != -1) {
     debug(F(" (Sing tune)"));
     sing();
+    
   } else if (command.indexOf("update time") != -1) {
     debug(F(" (Update time)"));
     setupTime();
@@ -271,7 +290,7 @@ void executeCommand(String command) {
 void sunriseKickstart() {
   debug(F("\n~~ Starting sunrise ~~"));
 
-  sunrise(0);
+  sunrise();
 }
 
 /*
@@ -283,23 +302,27 @@ void alarmStop() {
   debug(F("~~ Stopping alarm ~~"));
   analogWrite(LED, 0);
   alarmStopFlag = true;
+  sunriseVal = 0;
 }
 
 /*
    Makes the sunrise happen.
+   Re-schedules itself one second later so that Arduino is not blocked while sunrise is happening.
 */
-void sunrise(float sunriseVal) {
-  sunriseVal += increment;
-
+void sunrise() {
   if (sunriseVal < 255) {
+    sunriseVal += increment;
+    
     if (DEBUG) {
-      Serial.print(F("Current value for sunrise:"));
+      Serial.print(F("Current value for sunrise: "));
       Serial.println(sunriseVal);
     }
 
     analogWrite(LED, sunriseVal);
-    delay(1000);
-    sunrise(sunriseVal);
+    Alarm.alarmOnce(hour(now()+1), minute(now()+1), second(now()+1), sunrise);
+    
+    //delay(1000);
+    //sunrise(sunriseVal);
   } else {
     debug(F("~~ Keep lights on for a while... ~~"));
   }

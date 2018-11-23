@@ -156,6 +156,8 @@ public:
   time_t read(AlarmID_t ID) const;                // return the value for the given timer
   dtAlarmPeriod_t readType(AlarmID_t ID) const;   // return the alarm type for the given alarm ID
   bool isAllocated(AlarmID_t ID) const;           // returns true if this id is allocated
+  time_t getNextTrigger() const;                  // returns the time of the next scheduled alarm
+  time_t getNextTrigger(AlarmID_t ID) const;      // returns the time of scheduled alarm
 
   void free(AlarmID_t ID);                  // free the id to allow its reuse
 
@@ -163,8 +165,8 @@ public:
 private:  // the following methods are for testing and are not documented as part of the standard library
 #endif
   uint8_t count() const;                          // returns the number of allocated timers
-  time_t getNextTrigger() const;                  // returns the time of the next scheduled alarm
-  time_t getNextTrigger(AlarmID_t ID) const;      // returns the time of scheduled alarm
+  //time_t getNextTrigger() const;                  // returns the time of the next scheduled alarm
+  //time_t getNextTrigger(AlarmID_t ID) const;      // returns the time of scheduled alarm
   //bool isAllocated(AlarmID_t ID) const;           // returns true if this id is allocated
   bool isAlarm(AlarmID_t ID) const;               // returns true if id is for a time based alarm, false if its a timer or not allocated
 };
